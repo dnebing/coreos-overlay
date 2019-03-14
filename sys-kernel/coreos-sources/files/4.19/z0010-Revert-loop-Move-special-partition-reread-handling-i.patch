@@ -1,0 +1,65 @@
+From 91335e2ba0eac85ac13b518dd64ca2a62c83cd81 Mon Sep 17 00:00:00 2001
+From: David Michael <dm0@redhat.com>
+Date: Tue, 12 Mar 2019 22:54:31 -0400
+Subject: [PATCH 10/19] Revert "loop: Move special partition reread handling in
+ loop_clr_fd()"
+
+This reverts commit ed281a7230c979660fdc8cb6d6ff08e3507aba22.
+---
+ drivers/block/loop.c | 33 ++++++++++++++-------------------
+ 1 file changed, 14 insertions(+), 19 deletions(-)
+
+diff --git a/drivers/block/loop.c b/drivers/block/loop.c
+index db73fb5f16c7..c53ad5e88a7d 100644
+--- a/drivers/block/loop.c
++++ b/drivers/block/loop.c
+@@ -631,7 +631,18 @@ static void loop_reread_partitions(struct loop_device *lo,
+ {
+ 	int rc;
+ 
+-	rc = blkdev_reread_part(bdev);
++	/*
++	 * bd_mutex has been held already in release path, so don't
++	 * acquire it if this function is called in such case.
++	 *
++	 * If the reread partition isn't from release path, lo_refcnt
++	 * must be at least one and it can only become zero when the
++	 * current holder is released.
++	 */
++	if (!atomic_read(&lo->lo_refcnt))
++		rc = __blkdev_reread_part(bdev);
++	else
++		rc = blkdev_reread_part(bdev);
+ 	if (rc)
+ 		pr_warn("%s: partition scan of loop%d (%s) failed (rc=%d)\n",
+ 			__func__, lo->lo_number, lo->lo_file_name, rc);
+@@ -1085,24 +1096,8 @@ static int __loop_clr_fd(struct loop_device *lo)
+ 	module_put(THIS_MODULE);
+ 	blk_mq_unfreeze_queue(lo->lo_queue);
+ 
+-	if (lo->lo_flags & LO_FLAGS_PARTSCAN && bdev) {
+-		/*
+-		 * bd_mutex has been held already in release path, so don't
+-		 * acquire it if this function is called in such case.
+-		 *
+-		 * If the reread partition isn't from release path, lo_refcnt
+-		 * must be at least one and it can only become zero when the
+-		 * current holder is released.
+-		 */
+-		if (!atomic_read(&lo->lo_refcnt))
+-			err = __blkdev_reread_part(bdev);
+-		else
+-			err = blkdev_reread_part(bdev);
+-		pr_warn("%s: partition scan of loop%d failed (rc=%d)\n",
+-			__func__, lo->lo_number, err);
+-		/* Device is gone, no point in returning error */
+-		err = 0;
+-	}
++	if (lo->lo_flags & LO_FLAGS_PARTSCAN && bdev)
++		loop_reread_partitions(lo, bdev);
+ 	lo->lo_flags = 0;
+ 	if (!part_shift)
+ 		lo->lo_disk->flags |= GENHD_FL_NO_PART_SCAN;
+-- 
+2.20.1
+

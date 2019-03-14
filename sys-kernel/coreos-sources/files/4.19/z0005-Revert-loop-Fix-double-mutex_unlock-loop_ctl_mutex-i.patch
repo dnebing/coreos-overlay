@@ -1,0 +1,31 @@
+From 0c3e72c04b6c448603bd2edead7cd2af633906c1 Mon Sep 17 00:00:00 2001
+From: David Michael <dm0@redhat.com>
+Date: Tue, 12 Mar 2019 22:54:30 -0400
+Subject: [PATCH 05/19] Revert "loop: Fix double mutex_unlock(&loop_ctl_mutex)
+ in loop_control_ioctl()"
+
+This reverts commit 30805ece50683025ecf06b1d18d540e305550409.
+---
+ drivers/block/loop.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/drivers/block/loop.c b/drivers/block/loop.c
+index e0802d15ace0..ec083665f1fd 100644
+--- a/drivers/block/loop.c
++++ b/drivers/block/loop.c
+@@ -2075,10 +2075,12 @@ static long loop_control_ioctl(struct file *file, unsigned int cmd,
+ 			break;
+ 		if (lo->lo_state != Lo_unbound) {
+ 			ret = -EBUSY;
++			mutex_unlock(&loop_ctl_mutex);
+ 			break;
+ 		}
+ 		if (atomic_read(&lo->lo_refcnt) > 0) {
+ 			ret = -EBUSY;
++			mutex_unlock(&loop_ctl_mutex);
+ 			break;
+ 		}
+ 		lo->lo_disk->private_data = NULL;
+-- 
+2.20.1
+

@@ -1,0 +1,82 @@
+From c5e754a45fe081e3f1d83f3efcf013902b790a43 Mon Sep 17 00:00:00 2001
+From: David Michael <dm0@redhat.com>
+Date: Tue, 12 Mar 2019 22:54:31 -0400
+Subject: [PATCH 12/19] Revert "loop: Push loop_ctl_mutex down to
+ loop_set_fd()"
+
+This reverts commit 9218b108062e159278c45a50f1c81094e30acf86.
+---
+ drivers/block/loop.c | 26 ++++++++++++--------------
+ 1 file changed, 12 insertions(+), 14 deletions(-)
+
+diff --git a/drivers/block/loop.c b/drivers/block/loop.c
+index b4500d82238d..5661489d11a7 100644
+--- a/drivers/block/loop.c
++++ b/drivers/block/loop.c
+@@ -919,17 +919,13 @@ static int loop_set_fd(struct loop_device *lo, fmode_t mode,
+ 	if (!file)
+ 		goto out;
+ 
+-	error = mutex_lock_killable_nested(&loop_ctl_mutex, 1);
+-	if (error)
+-		goto out_putf;
+-
+ 	error = -EBUSY;
+ 	if (lo->lo_state != Lo_unbound)
+-		goto out_unlock;
++		goto out_putf;
+ 
+ 	error = loop_validate_file(file, bdev);
+ 	if (error)
+-		goto out_unlock;
++		goto out_putf;
+ 
+ 	mapping = file->f_mapping;
+ 	inode = mapping->host;
+@@ -941,10 +937,10 @@ static int loop_set_fd(struct loop_device *lo, fmode_t mode,
+ 	error = -EFBIG;
+ 	size = get_loop_size(lo, file);
+ 	if ((loff_t)(sector_t)size != size)
+-		goto out_unlock;
++		goto out_putf;
+ 	error = loop_prepare_queue(lo);
+ 	if (error)
+-		goto out_unlock;
++		goto out_putf;
+ 
+ 	error = 0;
+ 
+@@ -983,14 +979,11 @@ static int loop_set_fd(struct loop_device *lo, fmode_t mode,
+ 	 * put /dev/loopXX inode. Later in __loop_clr_fd() we bdput(bdev).
+ 	 */
+ 	bdgrab(bdev);
+-	mutex_unlock(&loop_ctl_mutex);
+ 	return 0;
+ 
+-out_unlock:
+-	mutex_unlock(&loop_ctl_mutex);
+-out_putf:
++ out_putf:
+ 	fput(file);
+-out:
++ out:
+ 	/* This is safe: open() is still holding a reference. */
+ 	module_put(THIS_MODULE);
+ 	return error;
+@@ -1468,7 +1461,12 @@ static int lo_ioctl(struct block_device *bdev, fmode_t mode,
+ 
+ 	switch (cmd) {
+ 	case LOOP_SET_FD:
+-		return loop_set_fd(lo, mode, bdev, arg);
++		err = mutex_lock_killable_nested(&loop_ctl_mutex, 1);
++		if (err)
++			return err;
++		err = loop_set_fd(lo, mode, bdev, arg);
++		mutex_unlock(&loop_ctl_mutex);
++		break;
+ 	case LOOP_CHANGE_FD:
+ 		err = mutex_lock_killable_nested(&loop_ctl_mutex, 1);
+ 		if (err)
+-- 
+2.20.1
+

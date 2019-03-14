@@ -1,0 +1,89 @@
+From 5e2343b19ec3cb466094fdbfaecef8effb38d409 Mon Sep 17 00:00:00 2001
+From: David Michael <dm0@redhat.com>
+Date: Tue, 12 Mar 2019 22:54:31 -0400
+Subject: [PATCH 09/19] Revert "loop: Move loop_reread_partitions() out of
+ loop_ctl_mutex"
+
+This reverts commit 6e0d6935309579b98249b3b8ffebf49b78bbd771.
+---
+ drivers/block/loop.c | 19 +++++--------------
+ 1 file changed, 5 insertions(+), 14 deletions(-)
+
+diff --git a/drivers/block/loop.c b/drivers/block/loop.c
+index 0d54c3ee3a96..db73fb5f16c7 100644
+--- a/drivers/block/loop.c
++++ b/drivers/block/loop.c
+@@ -680,7 +680,6 @@ static int loop_change_fd(struct loop_device *lo, struct block_device *bdev,
+ {
+ 	struct file	*file, *old_file;
+ 	int		error;
+-	bool		partscan;
+ 
+ 	error = mutex_lock_killable_nested(&loop_ctl_mutex, 1);
+ 	if (error)
+@@ -722,10 +721,9 @@ static int loop_change_fd(struct loop_device *lo, struct block_device *bdev,
+ 	blk_mq_unfreeze_queue(lo->lo_queue);
+ 
+ 	fput(old_file);
+-	partscan = lo->lo_flags & LO_FLAGS_PARTSCAN;
+-	mutex_unlock(&loop_ctl_mutex);
+-	if (partscan)
++	if (lo->lo_flags & LO_FLAGS_PARTSCAN)
+ 		loop_reread_partitions(lo, bdev);
++	mutex_unlock(&loop_ctl_mutex);
+ 	return 0;
+ 
+ out_putf:
+@@ -906,7 +904,6 @@ static int loop_set_fd(struct loop_device *lo, fmode_t mode,
+ 	int		lo_flags = 0;
+ 	int		error;
+ 	loff_t		size;
+-	bool		partscan;
+ 
+ 	/* This is safe, since we have a reference from open(). */
+ 	__module_get(THIS_MODULE);
+@@ -973,15 +970,14 @@ static int loop_set_fd(struct loop_device *lo, fmode_t mode,
+ 	lo->lo_state = Lo_bound;
+ 	if (part_shift)
+ 		lo->lo_flags |= LO_FLAGS_PARTSCAN;
+-	partscan = lo->lo_flags & LO_FLAGS_PARTSCAN;
++	if (lo->lo_flags & LO_FLAGS_PARTSCAN)
++		loop_reread_partitions(lo, bdev);
+ 
+ 	/* Grab the block_device to prevent its destruction after we
+ 	 * put /dev/loopXX inode. Later in __loop_clr_fd() we bdput(bdev).
+ 	 */
+ 	bdgrab(bdev);
+ 	mutex_unlock(&loop_ctl_mutex);
+-	if (partscan)
+-		loop_reread_partitions(lo, bdev);
+ 	return 0;
+ 
+ out_unlock:
+@@ -1162,8 +1158,6 @@ loop_set_status(struct loop_device *lo, const struct loop_info64 *info)
+ 	int err;
+ 	struct loop_func_table *xfer;
+ 	kuid_t uid = current_uid();
+-	struct block_device *bdev;
+-	bool partscan = false;
+ 
+ 	err = mutex_lock_killable_nested(&loop_ctl_mutex, 1);
+ 	if (err)
+@@ -1252,13 +1246,10 @@ loop_set_status(struct loop_device *lo, const struct loop_info64 *info)
+ 	     !(lo->lo_flags & LO_FLAGS_PARTSCAN)) {
+ 		lo->lo_flags |= LO_FLAGS_PARTSCAN;
+ 		lo->lo_disk->flags &= ~GENHD_FL_NO_PART_SCAN;
+-		bdev = lo->lo_device;
+-		partscan = true;
++		loop_reread_partitions(lo, lo->lo_device);
+ 	}
+ out_unlock:
+ 	mutex_unlock(&loop_ctl_mutex);
+-	if (partscan)
+-		loop_reread_partitions(lo, bdev);
+ 
+ 	return err;
+ }
+-- 
+2.20.1
+

@@ -1,0 +1,72 @@
+From e273722f7ee697b536d80bbaeaeff0292889189e Mon Sep 17 00:00:00 2001
+From: David Michael <dm0@redhat.com>
+Date: Tue, 12 Mar 2019 22:54:31 -0400
+Subject: [PATCH 06/19] Revert "loop: Get rid of 'nested' acquisition of
+ loop_ctl_mutex"
+
+This reverts commit b42e24aa3b8811df6f733fd6e033350e0d406847.
+---
+ drivers/block/loop.c | 12 ++++++------
+ 1 file changed, 6 insertions(+), 6 deletions(-)
+
+diff --git a/drivers/block/loop.c b/drivers/block/loop.c
+index ec083665f1fd..a517247a32fa 100644
+--- a/drivers/block/loop.c
++++ b/drivers/block/loop.c
+@@ -682,7 +682,7 @@ static int loop_change_fd(struct loop_device *lo, struct block_device *bdev,
+ 	int		error;
+ 	bool		partscan;
+ 
+-	error = mutex_lock_killable(&loop_ctl_mutex);
++	error = mutex_lock_killable_nested(&loop_ctl_mutex, 1);
+ 	if (error)
+ 		return error;
+ 	error = -ENXIO;
+@@ -920,7 +920,7 @@ static int loop_set_fd(struct loop_device *lo, fmode_t mode,
+ 	if (!file)
+ 		goto out;
+ 
+-	error = mutex_lock_killable(&loop_ctl_mutex);
++	error = mutex_lock_killable_nested(&loop_ctl_mutex, 1);
+ 	if (error)
+ 		goto out_putf;
+ 
+@@ -1136,7 +1136,7 @@ static int loop_clr_fd(struct loop_device *lo)
+ {
+ 	int err;
+ 
+-	err = mutex_lock_killable(&loop_ctl_mutex);
++	err = mutex_lock_killable_nested(&loop_ctl_mutex, 1);
+ 	if (err)
+ 		return err;
+ 	if (lo->lo_state != Lo_bound) {
+@@ -1173,7 +1173,7 @@ loop_set_status(struct loop_device *lo, const struct loop_info64 *info)
+ 	struct block_device *bdev;
+ 	bool partscan = false;
+ 
+-	err = mutex_lock_killable(&loop_ctl_mutex);
++	err = mutex_lock_killable_nested(&loop_ctl_mutex, 1);
+ 	if (err)
+ 		return err;
+ 	if (lo->lo_encrypt_key_size &&
+@@ -1278,7 +1278,7 @@ loop_get_status(struct loop_device *lo, struct loop_info64 *info)
+ 	struct kstat stat;
+ 	int ret;
+ 
+-	ret = mutex_lock_killable(&loop_ctl_mutex);
++	ret = mutex_lock_killable_nested(&loop_ctl_mutex, 1);
+ 	if (ret)
+ 		return ret;
+ 	if (lo->lo_state != Lo_bound) {
+@@ -1467,7 +1467,7 @@ static int lo_simple_ioctl(struct loop_device *lo, unsigned int cmd,
+ {
+ 	int err;
+ 
+-	err = mutex_lock_killable(&loop_ctl_mutex);
++	err = mutex_lock_killable_nested(&loop_ctl_mutex, 1);
+ 	if (err)
+ 		return err;
+ 	switch (cmd) {
+-- 
+2.20.1
+

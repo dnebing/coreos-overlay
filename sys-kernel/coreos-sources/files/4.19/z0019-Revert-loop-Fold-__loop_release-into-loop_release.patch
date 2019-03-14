@@ -1,0 +1,58 @@
+From e3dccd0cdeaa03b65ab5e01ebe26d463f639ab6a Mon Sep 17 00:00:00 2001
+From: David Michael <dm0@redhat.com>
+Date: Tue, 12 Mar 2019 22:54:32 -0400
+Subject: [PATCH 19/19] Revert "loop: Fold __loop_release into loop_release"
+
+This reverts commit 38d9cce3d61fe8d6ba24413eba74b4c8d24797f9.
+---
+ drivers/block/loop.c | 16 +++++++++-------
+ 1 file changed, 9 insertions(+), 7 deletions(-)
+
+diff --git a/drivers/block/loop.c b/drivers/block/loop.c
+index cc43d835fe6f..d0f1b7106572 100644
+--- a/drivers/block/loop.c
++++ b/drivers/block/loop.c
+@@ -1642,15 +1642,12 @@ static int lo_open(struct block_device *bdev, fmode_t mode)
+ 	return err;
+ }
+ 
+-static void lo_release(struct gendisk *disk, fmode_t mode)
++static void __lo_release(struct loop_device *lo)
+ {
+-	struct loop_device *lo;
+ 	int err;
+ 
+-	mutex_lock(&loop_index_mutex);
+-	lo = disk->private_data;
+ 	if (atomic_dec_return(&lo->lo_refcnt))
+-		goto unlock_index;
++		return;
+ 
+ 	mutex_lock(&loop_ctl_mutex);
+ 	if (lo->lo_flags & LO_FLAGS_AUTOCLEAR) {
+@@ -1660,7 +1657,7 @@ static void lo_release(struct gendisk *disk, fmode_t mode)
+ 		 */
+ 		err = loop_clr_fd(lo);
+ 		if (!err)
+-			goto unlock_index;
++			return;
+ 	} else if (lo->lo_state == Lo_bound) {
+ 		/*
+ 		 * Otherwise keep thread (if running) and config,
+@@ -1671,7 +1668,12 @@ static void lo_release(struct gendisk *disk, fmode_t mode)
+ 	}
+ 
+ 	mutex_unlock(&loop_ctl_mutex);
+-unlock_index:
++}
++
++static void lo_release(struct gendisk *disk, fmode_t mode)
++{
++	mutex_lock(&loop_index_mutex);
++	__lo_release(disk->private_data);
+ 	mutex_unlock(&loop_index_mutex);
+ }
+ 
+-- 
+2.20.1
+
